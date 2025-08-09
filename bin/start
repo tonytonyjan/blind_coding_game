@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'listen'
+
+$audio_pid = nil
+answers = Dir.glob('answers/*.txt').map { File.read(it) }
+docker_prefix = 'docker run --rm -v .:/app -w /app blind_coding'
+
+def play_audio(name)
+  Process.kill('KILL', $audio_pid) if $audio_pid
+  $audio_pid = spawn('afplay', "assets/#{name}.aac")
+end
+
+listener = Listen.to('.') do |modified, _added, _removed|
+  next if modified.empty?
+
+  path = modified.first
+  filename = File.basename(path)
+  name, ext = filename.split('.', 2)
+
+  if File.read(path).empty?
+    play_audio('start')
+    next
+  end
+  next unless %w[rb py js swift kt].include?(ext)
+
+  puts "Running #{filename}"
+  stdout =
+    case ext
+    when 'rb' then `#{docker_prefix} ruby #{filename}`
+    when 'py' then `#{docker_prefix} python3 #{filename}`
+    when 'js' then `#{docker_prefix} node #{filename}`
+    when 'swift' then `#{docker_prefix} swift #{filename}`
+    when 'kt' then `#{docker_prefix} kotlinc #{filename} -include-runtime -d #{name}.jar && java -jar #{name}.jar`
+    end
+  puts stdout
+
+  play_audio('win') if answers.include?(stdout)
+end
+listener.start
+sleep
